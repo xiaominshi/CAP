@@ -1,0 +1,38 @@
+{
+  "xsappname": "maintenance-center5",
+  "tenant-mode": "dedicated",
+  "scopes": [
+    { "name": "$XSAPPNAME.Viewer",     "description": "Can view maintenance data" },
+    { "name": "$XSAPPNAME.Manager",    "description": "Can approve or reject maintenance requests" },
+    { "name": "$XSAPPNAME.Technician", "description": "Can close maintenance requests" },
+    { "name": "$XSAPPNAME.Admin",      "description": "Can administer maintenance data" }
+  ],
+  "attributes": [],
+  "role-templates": [
+    {
+      "name": "Viewer",
+      "description": "Viewer role",
+      "scope-references": ["$XSAPPNAME.Viewer"]
+    },
+    {
+      "name": "Manager",
+      "description": "Manager role",
+      "scope-references": ["$XSAPPNAME.Viewer", "$XSAPPNAME.Manager"]
+    },
+    {
+      "name": "Technician",
+      "description": "Technician role",
+      "scope-references": ["$XSAPPNAME.Viewer", "$XSAPPNAME.Technician"]
+    },
+    {
+      "name": "Admin",
+      "description": "Admin role",
+      "scope-references": [
+        "$XSAPPNAME.Viewer",
+        "$XSAPPNAME.Manager",
+        "$XSAPPNAME.Technician",
+        "$XSAPPNAME.Admin"
+      ]
+    }
+  ]
+}

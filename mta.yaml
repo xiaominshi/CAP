@@ -1,0 +1,230 @@
+_schema-version: 3.3.0
+ID: maintenance-center5
+description: A simple CAP project.
+version: 1.0.0
+modules:
+  - name: maintenance-center5-srv
+    type: nodejs
+    path: gen/srv
+    requires:
+      - name: maintenance-center5-auth
+      - name: maintenance-center5-db
+      - name: maintenance-center5-connectivity
+      - name: maintenance-center5-destination
+    provides:
+      - name: srv-api
+        properties:
+          srv-url: ${default-url}
+    parameters:
+      buildpack: nodejs_buildpack
+      instances: 1
+    build-parameters:
+      builder: npm-ci
+  - name: maintenance-center5-db-deployer
+    type: hdb
+    path: gen/db
+    requires:
+      - name: maintenance-center5-db
+    parameters:
+      buildpack: nodejs_buildpack
+  - name: maintenance-center5
+    type: approuter.nodejs
+    path: app/router
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          forwardAuthToken: true
+          name: srv-api
+          url: ~{srv-url}
+      - name: maintenance-center5-auth
+      - name: maintenance-center5-destination
+      - name: maintenance-center5-html5-runtime
+    provides:
+      - name: app-api
+        properties:
+          app-protocol: ${protocol}
+          app-uri: ${default-uri}
+    parameters:
+      disk-quota: 256M
+      keep-existing-routes: true
+      memory: 256M
+  - name: maintenance-center5-app-deployer
+    type: com.sap.application.content
+    path: gen
+    requires:
+      - name: maintenance-center5-auth
+      - name: srv-api
+      - name: maintenance-center5-html5-repo-host
+        parameters:
+          config:
+            HTML5Runtime_enabled: true
+          content-target: true
+    build-parameters:
+      build-result: app/
+      requires:
+        - artifacts:
+            - equip.zip
+          name: equip
+          target-path: app/
+        - artifacts:
+            - project1.zip
+          name: project1
+          target-path: app/
+    parameters:
+      config:
+        destinations:
+          - Name: srv-api
+            URL: ~{srv-api/srv-url}
+            Authentication: NoAuthentication
+            Type: HTTP
+            ProxyType: Internet
+            HTML5.ForwardAuthToken: true
+            HTML5.DynamicDestination: true
+  - name: equip
+    type: html5
+    path: app/equip
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm install
+        - npm run build:cf
+        - npm ci
+        - npm run build
+      supported-platforms:
+        []
+  - name: project1
+    type: html5
+    path: app/project1
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm install
+        - npm run build:cf
+        - npm ci
+        - npm run build
+      supported-platforms:
+        []
+
+  - name: maintenance-center5-destinations
+    type: com.sap.application.content
+    requires:
+      - name: maintenance-center5-auth
+        parameters:
+          service-key:
+            name: maintenance-center5-auth-key
+      - name: maintenance-center5-html5-repo-host
+        parameters:
+          service-key:
+            name: maintenance-center5-html5-repo-host-key
+      - name: srv-api
+      - name: maintenance-center5-destination
+        parameters:
+          content-target: true
+    build-parameters:
+      no-source: true
+    parameters:
+      content:
+        subaccount:
+          existing_destinations_policy: update
+          destinations:
+            - Name: maintenance-center5-html5-repository
+              ServiceInstanceName: maintenance-center5-html5-repo-host
+              ServiceKeyName: maintenance-center5-html5-repo-host-key
+              sap.cloud.service: maintenancecenter5.service
+            - Name: maintenance-center5-auth
+              Authentication: OAuth2UserTokenExchange
+              ServiceInstanceName: maintenance-center5-auth
+              ServiceKeyName: maintenance-center5-auth-key
+              sap.cloud.service: maintenancecenter5.service
+resources:
+  - name: maintenance-center5-auth
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        oauth2-configuration:
+          credential-types:
+            - binding-secret
+            - x509
+          redirect-uris:
+            - https://*~{app-api/app-uri}/**
+        tenant-mode: dedicated
+        xsappname: maintenance-center5-${org}-${space}
+        role-collections:
+          - name: 'Viewer (maintenance-center5 ${org}-${space})'
+            description: 'generated'
+            role-template-references:
+              - '$XSAPPNAME.Viewer'
+          - name: 'Manager (maintenance-center5 ${org}-${space})'
+            description: 'generated'
+            role-template-references:
+              - '$XSAPPNAME.Manager'
+          - name: 'Technician (maintenance-center5 ${org}-${space})'
+            description: 'generated'
+            role-template-references:
+              - '$XSAPPNAME.Technician'
+          - name: 'Admin (maintenance-center5 ${org}-${space})'
+            description: 'generated'
+            role-template-references:
+              - '$XSAPPNAME.Admin'
+      path: ./xs-security.json
+      service: xsuaa
+      service-plan: application
+    requires:
+      - name: app-api
+  - name: maintenance-center5-db
+    type: com.sap.xs.hdi-container
+    parameters:
+      service: hana
+      service-plan: hdi-shared
+  - name: maintenance-center5-connectivity
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: connectivity
+      service-plan: lite
+  - name: maintenance-center5-destination
+    type: org.cloudfoundry.managed-service
+    parameters:
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            destinations:
+              - Authentication: NoAuthentication
+                Name: ui5
+                ProxyType: Internet
+                Type: HTTP
+                URL: https://ui5.sap.com
+              - Authentication: NoAuthentication
+                HTML5.DynamicDestination: true
+                HTML5.ForwardAuthToken: true
+                Name: srv-api
+                ProxyType: Internet
+                Type: HTTP
+                URL: ~{srv-api/srv-url}
+            existing_destinations_policy: update
+      service: destination
+      service-plan: lite
+    requires:
+      - name: srv-api
+  - name: maintenance-center5-html5-repo-host
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-host
+  - name: maintenance-center5-html5-runtime
+    type: org.cloudfoundry.managed-service
+    parameters:
+      service: html5-apps-repo
+      service-plan: app-runtime
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
