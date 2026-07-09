@@ -2,6 +2,8 @@ const cds = require('@sap/cds')
  
 module.exports = cds.service.impl(async function () {
   const { Equipments, MaintenanceRequests } = this.entities
+
+  const cpi = await cds.connect.to('CPIService')
  
   const validEquipmentStatuses = ['Available', 'Broken', 'InMaintenance']
   const validRequestPriorities = ['Low', 'Medium', 'High']
@@ -11,6 +13,38 @@ module.exports = cds.service.impl(async function () {
     const lastParam = req.params[req.params.length - 1]
     return lastParam.ID
   }
+  async function notifyCPI(action, request, comment, userId) {
+    console.log('>>> notifyCPI called')
+    console.log('>>> CPI action:', action)
+    console.log('>>> CPI payload:', {
+      action,
+      requestId: request.ID,
+      status: request.status,
+      equipmentId: request.equipment_ID,
+      comment,
+      userId
+    })
+  try {
+    await cpi.send({
+      method: 'POST',
+      path: '/http/businesspartners_clean',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      data: {
+        action,
+        requestId: request.ID,
+        status: request.status,
+        equipmentId: request.equipment_ID,
+        comment,
+        userId,
+        timestamp: new Date().toISOString()
+      }
+    })
+  } catch (error) {
+    console.error('Failed to call CPI:', error.message)
+  }
+}
  
   this.after('READ', 'MaintenanceRequests', (data) => {
     const requests = Array.isArray(data) ? data : [data]
@@ -44,6 +78,9 @@ module.exports = cds.service.impl(async function () {
   })
  
   this.on('approve', 'MaintenanceRequests', async (req) => {
+    console.log('>>> approve action triggered')
+    console.log('>>> approve req.data:', req.data)
+    console.log('>>> approve req.params:', req.params)
     const ID = getRequestID(req)
     const { comment } = req.data
  
@@ -74,7 +111,16 @@ module.exports = cds.service.impl(async function () {
         .set({ status: 'InMaintenance' })
         .where({ ID: request.equipment_ID })
     }
- 
+    
+    const updatedRequest = await SELECT.one.from(MaintenanceRequests).where({ ID })
+
+    await notifyCPI(
+      'approve',
+      updatedRequest,
+      comment || 'Approved',
+      req.user?.id || 'anonymous'
+    )
+
     return SELECT.one.from(MaintenanceRequests).where({ ID })
   })
  
